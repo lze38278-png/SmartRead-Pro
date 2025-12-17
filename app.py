@@ -9,6 +9,8 @@ from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+# 🟢 [新增] 引入翻译库
+from deep_translator import GoogleTranslator
 
 
 # --- 1. 初始化 NLP 引擎 ---
@@ -68,32 +70,65 @@ def get_article_category_by_name(filename):
         return "其他"
 
 
-# --- 3. 数据加载 (V3.5 核心升级：递归读取) ---
+# 🟢 [新增翻译升级版] 智能分片翻译函数
+# 技术亮点：解决了长文本导致 API 溢出的问题，适合软著技术点描述
+@st.cache_data(show_spinner=False)
+def translate_text(text):
+    try:
+        # 1. 使用 NLTK 智能分句 (保证不切断句子)
+        sentences = nltk.sent_tokenize(text)
+
+        chunks = []
+        current_chunk = ""
+
+        # 2. 动态组装分块 (每块控制在 1000 字符以内)
+        for sentence in sentences:
+            if len(current_chunk) + len(sentence) < 1000:
+                current_chunk += sentence + " "
+            else:
+                chunks.append(current_chunk)
+                current_chunk = sentence + " "
+        # 加上最后一块
+        if current_chunk:
+            chunks.append(current_chunk)
+
+        # 3. 批量翻译并拼接
+        full_translation = ""
+        translator = GoogleTranslator(source='auto', target='zh-CN')
+
+        for chunk in chunks:
+            if chunk.strip():
+                # 稍微加一点延时，防止请求太快被谷歌封锁
+                time.sleep(0.2)
+                trans = translator.translate(chunk)
+                if trans:
+                    full_translation += trans + " "
+
+        return full_translation
+    except Exception as e:
+        return f"翻译部分完成，后续连接超时: {str(e)}"
+
+
+# --- 3. 数据加载 (V3.5 递归读取逻辑保持不变) ---
 @st.cache_data
 def load_articles():
     articles = []
     data_folder = 'data'
 
-    # 如果文件夹不存在，自动创建
     if not os.path.exists(data_folder):
         os.makedirs(data_folder)
         return []
 
-    # 🟢 [升级点] 使用 os.walk 遍历所有子文件夹
     for root, dirs, files in os.walk(data_folder):
         for filename in files:
             if filename.endswith(".txt"):
                 file_path = os.path.join(root, filename)
                 try:
-                    # 尝试从文件名提取年份
                     year_match = re.search(r'20\d{2}', filename)
                     year = int(year_match.group()) if year_match else 0
 
-                    # 🟢 [升级点] 优先用文件夹名字做分类
-                    # root 是当前文件的路径，os.path.basename(root) 就是文件夹名（如 "六级"）
                     folder_name = os.path.basename(root)
 
-                    # 如果文件直接在 data 根目录下，则尝试用文件名判断
                     if folder_name == 'data':
                         category = get_article_category_by_name(filename)
                     else:
@@ -110,17 +145,15 @@ def load_articles():
                             "content": content
                         })
                 except Exception as e:
-                    # 遇到编码错误或其他问题跳过
                     print(f"Skipping {filename}: {e}")
                     pass
 
-    # 按年份倒序排列
     articles.sort(key=lambda x: x['year'], reverse=True)
     return articles
 
 
 # --- 4. 界面设计 ---
-st.set_page_config(page_title="SmartRead Pro V3.5", page_icon="🎓", layout="wide")
+st.set_page_config(page_title="SmartRead Pro V3.6", page_icon="🎓", layout="wide")
 
 st.markdown("""
 <style>
@@ -139,17 +172,14 @@ st.markdown("""
 with st.sidebar:
     st.title("⚙️ 智算中心")
     st.success("✅ TF-IDF 算法已调优")
-    st.info("⚡ Max-DF 降噪 | 递归读取")
+    st.info("⚡ Max-DF 降噪 | 谷歌翻译")
     st.markdown("---")
 
-    # 1. 加载所有数据
     all_articles = load_articles()
     total_count = len(all_articles)
 
     if total_count > 0:
-        # 获取所有年份
         years = [a['year'] for a in all_articles if a['year'] > 0]
-        # 防止只有0年导致报错
         if years:
             min_y, max_y = (min(years), max(years))
         else:
@@ -158,17 +188,14 @@ with st.sidebar:
         st.subheader("📅 语料库范围")
         selected_range = st.slider("年份筛选", min_y, max_y, (min_y, max_y))
 
-        # 试卷类型多选框
         available_categories = sorted(list(set([a['category'] for a in all_articles])))
 
-        # 默认全部选中
         selected_cats = st.multiselect(
             "📚 试卷类型 (可多选)",
             options=available_categories,
             default=available_categories
         )
 
-        # 核心筛选逻辑
         filtered_articles = [
             a for a in all_articles
             if (selected_range[0] <= a['year'] <= selected_range[1]) and (a['category'] in selected_cats)
@@ -180,7 +207,6 @@ with st.sidebar:
         with col_s2:
             st.metric("激活文章", len(filtered_articles))
     else:
-        # 🟢 [修复点] 之前这里没定义 selected_cats，导致后续报错
         st.error("⚠️ 数据库为空")
         st.caption("请在 data 文件夹下放入 txt 真题文件")
         filtered_articles = []
@@ -189,7 +215,7 @@ with st.sidebar:
 
 st.title("🎓 SmartRead 考研英语智能伴读")
 st.caption(
-    f"V3.5 递归读取加强版 | 数据源: {selected_range[0]}-{selected_range[1]} | 类型: {', '.join(selected_cats) if selected_cats else '无'}")
+    f"V3.6 双语对照版 | 数据源: {selected_range[0]}-{selected_range[1]} | 类型: {', '.join(selected_cats) if selected_cats else '无'}")
 
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -207,7 +233,7 @@ if search_btn:
     elif not filtered_articles:
         st.error("❌ 当前筛选条件下无文章，请检查左侧筛选栏。")
     else:
-        progress_text = "正在执行 Max-DF 降噪 | 构建加权矩阵..."
+        progress_text = "正在执行 Max-DF 降噪 | 语义匹配中..."
         my_bar = st.progress(0, text=progress_text)
         for percent_complete in range(100):
             time.sleep(0.005)
@@ -264,6 +290,7 @@ if search_btn:
 
                         st.markdown("---")
 
+                        # 英文原文高亮处理
                         display_content = res['content']
                         for match_word in res['matches']:
                             pattern = re.compile(r'\b({})\b'.format(re.escape(match_word)), re.IGNORECASE)
@@ -272,6 +299,13 @@ if search_btn:
                                 display_content
                             )
                         st.markdown(display_content, unsafe_allow_html=True)
+
+                        # 🟢 [新增] 谷歌翻译折叠面板
+                        with st.expander("🇨🇳 点击查看中文翻译 (Google Translate)"):
+                            with st.spinner("正在连接 Google 翻译服务器..."):
+                                # 翻译原始内容，避免HTML标签干扰翻译
+                                trans_result = translate_text(res['content'])
+                                st.markdown(f"**中文译文：**\n\n{trans_result}")
 
         except ValueError:
             st.warning("⚠️ 无法构建向量空间，请尝试输入更具体的实义词。")
