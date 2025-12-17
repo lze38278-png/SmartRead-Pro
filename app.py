@@ -4,8 +4,11 @@ import re
 import string
 import time
 import nltk
+import numpy as np
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 
 # --- 1. 初始化 NLP 引擎 ---
@@ -24,71 +27,107 @@ def download_nltk_data():
 
 download_nltk_data()
 lemmatizer = WordNetLemmatizer()
-stop_words = set(stopwords.words('english'))
+base_stop_words = set(stopwords.words('english'))
+
+# 学术停用词表
+academic_stop_words = {
+    'text', 'author', 'passage', 'paragraph', 'article',
+    'example', 'however', 'although', 'therefore', 'study', 'research'
+}
+final_stop_words = list(base_stop_words.union(academic_stop_words))
 
 
-# --- 2. 核心 NLP 算法 (已修复数字问题) ---
-def process_text(text):
+# --- 2. 核心辅助函数 ---
+
+def process_text_for_display(text):
+    """用于前端高亮展示的处理"""
     text = text.lower()
-    # 去除标点
     text = text.translate(str.maketrans(string.punctuation, ' ' * len(string.punctuation)))
     words = nltk.word_tokenize(text)
-
     clean_words = []
     for word in words:
-        # 🟢 修复核心：增加 word.isalpha() 判断
-        # 含义：只有当单词完全由字母组成时才保留 (过滤掉 "24", "100%", "2015" 等)
-        if word not in stop_words and len(word) > 1 and word.isalpha():
+        if word not in base_stop_words and len(word) > 1 and word.isalpha():
             lemma = lemmatizer.lemmatize(word, pos='v')
             lemma = lemmatizer.lemmatize(lemma, pos='n')
             clean_words.append(lemma)
-
     return set(clean_words)
 
 
-# --- 3. 数据加载 ---
+def get_article_category_by_name(filename):
+    """基于文件名的备用分类逻辑"""
+    name_lower = filename.lower()
+    if "eng1" in name_lower or "英语一" in name_lower:
+        return "英语一"
+    elif "eng2" in name_lower or "英语二" in name_lower:
+        return "英语二"
+    elif "cet4" in name_lower or "四级" in name_lower:
+        return "四级"
+    elif "cet6" in name_lower or "六级" in name_lower:
+        return "六级"
+    else:
+        return "其他"
+
+
+# --- 3. 数据加载 (V3.5 核心升级：递归读取) ---
 @st.cache_data
 def load_articles():
     articles = []
     data_folder = 'data'
+
+    # 如果文件夹不存在，自动创建
     if not os.path.exists(data_folder):
         os.makedirs(data_folder)
         return []
 
-    files = os.listdir(data_folder)
-    files.sort(reverse=True)
+    # 🟢 [升级点] 使用 os.walk 遍历所有子文件夹
+    for root, dirs, files in os.walk(data_folder):
+        for filename in files:
+            if filename.endswith(".txt"):
+                file_path = os.path.join(root, filename)
+                try:
+                    # 尝试从文件名提取年份
+                    year_match = re.search(r'20\d{2}', filename)
+                    year = int(year_match.group()) if year_match else 0
 
-    for filename in files:
-        if filename.endswith(".txt"):
-            file_path = os.path.join(data_folder, filename)
-            try:
-                year_match = re.search(r'20\d{2}', filename)
-                year = int(year_match.group()) if year_match else 0
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content = f.read()
+                    # 🟢 [升级点] 优先用文件夹名字做分类
+                    # root 是当前文件的路径，os.path.basename(root) 就是文件夹名（如 "六级"）
+                    folder_name = os.path.basename(root)
+
+                    # 如果文件直接在 data 根目录下，则尝试用文件名判断
+                    if folder_name == 'data':
+                        category = get_article_category_by_name(filename)
+                    else:
+                        category = folder_name
+
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+
                     if content.strip():
                         articles.append({
                             "title": filename,
                             "year": year,
+                            "category": category,
                             "content": content
                         })
-            except Exception as e:
-                pass
+                except Exception as e:
+                    # 遇到编码错误或其他问题跳过
+                    print(f"Skipping {filename}: {e}")
+                    pass
+
+    # 按年份倒序排列
+    articles.sort(key=lambda x: x['year'], reverse=True)
     return articles
 
 
-# --- 4. 界面设计 (V0.2.7 风格) ---
-st.set_page_config(page_title="SmartRead Pro", page_icon="🎓", layout="wide")
+# --- 4. 界面设计 ---
+st.set_page_config(page_title="SmartRead Pro V3.5", page_icon="🎓", layout="wide")
 
-# 样式微调
 st.markdown("""
 <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
-
-    /* 荧光笔高亮样式 */
     .highlight-marker {
-        background-color: rgba(255, 235, 59, 0.6); 
+        background-color: rgba(255, 235, 59, 0.6);
         padding: 0 4px;
         border-radius: 4px;
         font-weight: bold;
@@ -97,57 +136,78 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 侧边栏
 with st.sidebar:
-    st.title("⚙️ 控制台")
-    st.success("✅ NLP 核心已就绪")
+    st.title("⚙️ 智算中心")
+    st.success("✅ TF-IDF 算法已调优")
+    st.info("⚡ Max-DF 降噪 | 递归读取")
     st.markdown("---")
 
+    # 1. 加载所有数据
     all_articles = load_articles()
     total_count = len(all_articles)
 
     if total_count > 0:
+        # 获取所有年份
         years = [a['year'] for a in all_articles if a['year'] > 0]
-        min_y, max_y = (min(years), max(years)) if years else (2010, 2025)
+        # 防止只有0年导致报错
+        if years:
+            min_y, max_y = (min(years), max(years))
+        else:
+            min_y, max_y = (2010, 2025)
 
-        st.subheader("📅 数据透视")
-        selected_range = st.slider("年份范围筛选", min_y, max_y, (min_y, max_y))
+        st.subheader("📅 语料库范围")
+        selected_range = st.slider("年份筛选", min_y, max_y, (min_y, max_y))
 
-        filtered_articles = [a for a in all_articles if selected_range[0] <= a['year'] <= selected_range[1]]
+        # 试卷类型多选框
+        available_categories = sorted(list(set([a['category'] for a in all_articles])))
+
+        # 默认全部选中
+        selected_cats = st.multiselect(
+            "📚 试卷类型 (可多选)",
+            options=available_categories,
+            default=available_categories
+        )
+
+        # 核心筛选逻辑
+        filtered_articles = [
+            a for a in all_articles
+            if (selected_range[0] <= a['year'] <= selected_range[1]) and (a['category'] in selected_cats)
+        ]
 
         col_s1, col_s2 = st.columns(2)
         with col_s1:
-            st.metric("文章总数", total_count)
+            st.metric("文章总量", total_count)
         with col_s2:
-            st.metric("当前选中", len(filtered_articles))
+            st.metric("激活文章", len(filtered_articles))
     else:
+        # 🟢 [修复点] 之前这里没定义 selected_cats，导致后续报错
         st.error("⚠️ 数据库为空")
+        st.caption("请在 data 文件夹下放入 txt 真题文件")
         filtered_articles = []
         selected_range = (0, 0)
+        selected_cats = []
 
-# 主界面标题 (回归白色大字)
 st.title("🎓 SmartRead 考研英语智能伴读")
-st.caption(f"V0.2.8 算法修复版 | 赋能你的每一分钟复习 | 数据源: {selected_range[0]}-{selected_range[1]}")
+st.caption(
+    f"V3.5 递归读取加强版 | 数据源: {selected_range[0]}-{selected_range[1]} | 类型: {', '.join(selected_cats) if selected_cats else '无'}")
 
-# 输入区
 col1, col2 = st.columns([3, 1])
 with col1:
-    user_input = st.text_area("在此输入你背的单词或长难句：", height=80,
-                              placeholder="试着输入: The economic growth rate involves inflation...")
+    user_input = st.text_area("在此输入单词或长难句：", height=80,
+                              placeholder="例如: First generation college students struggle with social class disadvantages...")
 with col2:
     st.write("")
     st.write("")
-    search_btn = st.button("🚀 深度匹配", type="primary", use_container_width=True)
+    search_btn = st.button("🚀 向量检索", type="primary", use_container_width=True)
 
-# --- 5. 匹配逻辑 ---
+# --- 5. 核心：TF-IDF 匹配算法 ---
 if search_btn:
     if not user_input.strip():
-        st.warning("⚠️ 请先输入内容！")
+        st.warning("⚠️ 请输入内容！")
     elif not filtered_articles:
-        st.error("❌ 没有数据可供检索。")
+        st.error("❌ 当前筛选条件下无文章，请检查左侧筛选栏。")
     else:
-        # 假装思考的进度条
-        progress_text = "正在去除停用词、词形还原、过滤非核心数字..."
+        progress_text = "正在执行 Max-DF 降噪 | 构建加权矩阵..."
         my_bar = st.progress(0, text=progress_text)
         for percent_complete in range(100):
             time.sleep(0.005)
@@ -155,56 +215,63 @@ if search_btn:
         time.sleep(0.2)
         my_bar.empty()
 
-        # 核心：处理用户输入 (此时数字会被过滤掉)
-        user_lemmas = process_text(user_input)
+        corpus = [item['content'] for item in filtered_articles]
+        corpus.append(user_input)
 
-        with st.expander("🧠 点击查看 NLP 语义分析内核 (已过滤数字干扰)", expanded=True):
-            st.write("原始输入:", user_input)
-            # 这里显示的集合里，绝对不会再有 '24' 了
-            st.code(f"核心词根提取 (Set): {user_lemmas}", language="python")
+        tfidf_vectorizer = TfidfVectorizer(
+            stop_words=final_stop_words,
+            max_df=0.6,
+            min_df=1
+        )
 
-        if not user_lemmas:
-            st.warning("输入内容无效（可能是停用词或纯数字），请输入实义词。")
-        else:
+        try:
+            tfidf_matrix = tfidf_vectorizer.fit_transform(corpus)
+            user_vector = tfidf_matrix[-1]
+            document_vectors = tfidf_matrix[:-1]
+            similarity_scores = cosine_similarity(user_vector, document_vectors).flatten()
+
             results = []
-            for item in filtered_articles:
-                article_lemmas = process_text(item['content'])
-                common = user_lemmas.intersection(article_lemmas)
-                score = len(common)
-                if score > 0:
+            user_lemmas_for_highlight = process_text_for_display(user_input)
+
+            for idx, score in enumerate(similarity_scores):
+                if score > 0.05:
+                    item = filtered_articles[idx]
                     item['score'] = score
-                    item['matches'] = common
+                    article_lemmas = process_text_for_display(item['content'])
+                    item['matches'] = user_lemmas_for_highlight.intersection(article_lemmas)
                     results.append(item)
 
             results.sort(key=lambda x: x['score'], reverse=True)
 
             if not results:
-                st.info("🤷‍♂️ 未找到匹配文章。")
+                st.info("🤷‍♂️ 未找到语义相关的文章。")
             else:
                 st.success(f"🎉 检索完成！为您推荐 **{len(results)}** 篇高相关真题")
 
                 for idx, res in enumerate(results[:10]):
-                    # 卡片容器
                     with st.container(border=True):
-                        # 完美的标题布局：排名 + 年份 + 标题
                         col_head_1, col_head_2 = st.columns([4, 1])
+                        score_percent = round(res['score'] * 100, 1)
 
                         with col_head_1:
-                            st.markdown(f"### 🏆 Top {idx + 1} | [{res['year']}] {res['title']}")
-                            st.caption(f"🎯 命中关键词: {', '.join(res['matches'])}")
+                            category_badge = f"【{res['category']}】"
+                            st.markdown(f"### 🏆 Top {idx + 1} | {category_badge} [{res['year']}] {res['title']}")
+                            match_str = ', '.join(res['matches']) if res['matches'] else "语义高度相关"
+                            st.caption(f"🎯 命中关键词: {match_str}")
 
                         with col_head_2:
-                            st.metric("匹配热度", res['score'])
+                            st.metric("相关度", f"{score_percent}%")
 
                         st.markdown("---")
 
                         display_content = res['content']
                         for match_word in res['matches']:
-                            # 正则全词匹配高亮
                             pattern = re.compile(r'\b({})\b'.format(re.escape(match_word)), re.IGNORECASE)
                             display_content = pattern.sub(
                                 r'<span class="highlight-marker">\1</span>',
                                 display_content
                             )
-
                         st.markdown(display_content, unsafe_allow_html=True)
+
+        except ValueError:
+            st.warning("⚠️ 无法构建向量空间，请尝试输入更具体的实义词。")

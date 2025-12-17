@@ -1,0 +1,17 @@
+Economic inequality is the “defining challenge of our time,” President Barack Obama declared in a speech last month to the Center for American Progress. Inequality is dangerous, he argued, not merely because it doesn’t look good to have a large gap between the rich and the poor, but because inequality itself destroys upward mobility, making it harder for the poor to escape from poverty. “Increased inequality and decreasing mobility pose a fundamental threat to the American Dream,” he said.
+
+Obama is only the most prominent public figure to declare inequality Public Enemy No.1 and the greatest threat to reducing poverty in America. A number of prominent economists have also argued that it’s harder for the poor to climb the economic ladder today because the rungs（横档）in that ladder have grown farther apart.
+
+For all the new attention devoted to the 1 percent, a new dataset from the Equality of Opportunity Project at Harvard and Berkeley suggests that, if we care about upward mobility overall, we’re vastly exaggerating the dangers of the rich-poor gap. Inequality itself is not a particularly strong predictor of economic mobility, as sociologist Scott Winship noted in a recent article based on his analysis of this data.
+
+So what factors, at the community level, do predict if poor children will move up the economic ladder as adults? What explains, for instance, why the Salt Lake City metro area is one of the 100 largest metropolitan areas most likely to lift the fortunes of the poor and the Atlanta metro area is one of the least likely?
+
+Harvard economist Raj Chetty has pointed to economic and racial segregation, community density, the size of a community’s middle class, the quality of schools, community religiosity, and family structure, which he calls the “single strongest correlate of upward mobility.” Chetty finds that communities like Salt Lake City, with high levels of two-parent families and religiosity, are much more likely to see poor children get ahead than communities like Atlanta, with high levels of racial and economic segregation.
+
+Chetty has not yet issued a comprehensive analysis of the relative predictive power of each of these factors. Based on my analyses of the data, of the factors that Chetty has highlighted, the following three seem to be most predictive of upward mobility in a given community:
+
+1. Per-capita（人均）income growth
+2. Prevalence of single mothers (where correlation is strong, but negative
+3. Per-capita local government spending
+
+In other words, communities with high levels of per-capita income growth, high percentages of two-parent families, and high local government spending—which may stand for good schools—are the most likely to help poor children relive the Horatio Alger’s rags-to-riches story.
