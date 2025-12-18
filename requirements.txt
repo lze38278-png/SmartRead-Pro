@@ -1,4 +1,5 @@
 streamlit
 nltk
 scikit-learn
+numpy
 deep-translator
